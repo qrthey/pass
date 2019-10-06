@@ -1,0 +1,213 @@
+(ns pass.core
+  (:import [java.util Base64]
+           [javax.crypto Cipher]
+           [javax.crypto.spec SecretKeySpec IvParameterSpec])
+  (:require [clojure.set :as set]
+            [clojure.edn :as edn]
+            [clojure.java.io :as io])
+  (:gen-class))
+
+;; encrypt / decrypt
+(defn bytes->base64
+  [bs]
+  (.encodeToString (Base64/getEncoder) bs))
+
+(defn base64->bytes
+  [base64]
+  (.decode (Base64/getDecoder) base64))
+
+(defn key-spec-aes
+  [password]
+  (let [digester (java.security.MessageDigest/getInstance "SHA-256")
+        evolutions (iterate #(.digest digester %) password)
+        key-bytes (nth evolutions (* 1000 1000))]
+    (SecretKeySpec. key-bytes "AES")))
+
+(def iv-par-spec
+  (IvParameterSpec.
+   (byte-array [18 170 155 90 161 13 112 4 30 110 90 36 71 76 208 232])))
+
+(defn encrypt-cbc
+  [text password]
+  (let [cipher (doto (Cipher/getInstance "AES/CBC/PKCS5PADDING")
+                 (.init Cipher/ENCRYPT_MODE (key-spec-aes password) iv-par-spec))
+        bytes-to-encrypt (.getBytes text "UTF-8")
+        encrypted-bytes (.doFinal cipher bytes-to-encrypt)]
+    (bytes->base64 encrypted-bytes)))
+
+(defn decrypt-cbc
+  [encrypted-text password]
+  (let [cipher (doto (Cipher/getInstance "AES/CBC/PKCS5PADDING")
+                 (.init Cipher/DECRYPT_MODE (key-spec-aes password) iv-par-spec))
+        bytes-to-decrypt (base64->bytes encrypted-text)
+        decrypted-bytes (.doFinal cipher bytes-to-decrypt)]
+    (String. decrypted-bytes "UTF-8")))
+
+(defn persist-secured
+  [data path password]
+  (spit path
+        (encrypt-cbc (pr-str data) password)))
+
+(defn read-secured
+  [path password]
+  (edn/read-string
+   (decrypt-cbc (slurp path) password)))
+
+;; autogenerate passwords
+(defn gen-password
+  [length & {:as selected}]
+  (let [char-choices {:numbers      "0123456789"
+                      :lowers       "abcdefghijklmnopqrstuvwxyz"
+                      :uppers       "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                      :punctuations ".!?,;-_"
+                      :spaces       " "}
+        chars (->> (set/difference (set (keys char-choices))
+                                   (set (map key (filter (complement val) selected))))
+                   (select-keys char-choices)
+                   vals
+                   (apply concat))]
+    (apply str (repeatedly length #(rand-nth chars)))))
+
+;; integration with the clipboard
+(defn copy-to-clipboard
+  [text]
+  (-> (java.awt.Toolkit/getDefaultToolkit)
+      .getSystemClipboard
+      (.setContents
+       (java.awt.datatransfer.StringSelection. text)
+       nil)))
+
+(defn reset-clipboard
+  []
+  (copy-to-clipboard ""))
+
+;; db operations and custom repl
+(def db (atom []))
+(def pwd (atom nil))
+
+(def db-path
+  (apply str (System/getenv "HOME")
+         [\/ \. \_ \_ \p \a \s \s \p \a \s \s]))
+
+(defn- char-array->byte-array
+  [chrs]
+  (let [byte-buffer (.encode java.nio.charset.StandardCharsets/UTF_8 (java.nio.CharBuffer/wrap chrs))]
+    (java.util.Arrays/copyOf (.array byte-buffer) (.limit byte-buffer))))
+
+(defn- read-password-from-console
+  [label]
+  (print (str label ": "))
+  (flush)
+  (if-let [console (System/console)]
+    (char-array->byte-array (.readPassword console))
+    (.getBytes (read-line))))
+
+(defn init-db
+  [password]
+  (reset! pwd password)
+  (if (.exists (io/file db-path))
+    (reset! db (read-secured db-path @pwd))
+    (reset! db (do
+                 (println "A database was not found. Please retype the password to create one.")
+                 (flush)
+                 (let [pwd2 (read-password-from-console "repeat new master password")]
+                   (if (= (seq password) (seq pwd2))
+                     []
+                     (do (reset! pwd nil)
+                         (throw (Exception. "passwords didn't match..."))))))))
+  nil)
+
+(defn select-entry
+  []
+  (let [entries (map-indexed (fn [idx entry] (assoc entry :idx (inc idx))) @db)
+        entries-grouped (group-by :idx entries)]
+    (if (seq entries)
+      (do
+        (println "Select one of the following entries by typing the leading line number.")
+        (doseq [{:keys [idx site username]} entries]
+          (println (str (format "%3d" idx) ": " site " (" username ")")))
+        (let [{:keys [site username password]} (->> (Integer/parseInt (read-line))
+                                                    (get entries-grouped)
+                                                    first)]
+          (println)
+          (println "site:" site)
+          (println "username:" username)
+          (copy-to-clipboard password)
+          (println)
+          (println (str "The password was copied to the clipboard. "
+                        "Press enter to clear the password from the clipboard."))
+          (read-line)
+          (reset-clipboard)))
+      (println "No entries found in the database!"))))
+
+(defn add-to-db
+  [data]
+  (swap! db conj data)
+  (persist-secured @db db-path @pwd))
+
+(defn delete-from-db
+  [data]
+  (swap! db #(filterv (fn [d] (not= d data)) %))
+  (persist-secured @db db-path @pwd))
+
+(defn read-label-val
+  [label]
+  (print (str label ": "))
+  (flush)
+  (read-line))
+
+(defn add-entry
+  []
+  (let [new-site (read-label-val "site")
+        new-username (read-label-val "user")]
+    (if (some (fn [{:keys [site username]}]
+                (and (= site new-site)
+                     (= username new-username)))
+              @db)
+      (println "That combination already exist, delete and recreate to change.")
+      (loop [password (gen-password 75)]
+        (copy-to-clipboard password)
+        (println (str "A new password was generated into the clipboard. "
+                      "Try if the site accepts it."))
+        (let [choice (read-label-val "pwd ok? (y/n)")]
+          (if (= choice "y")
+            (do
+              (add-to-db {:site new-site :username new-username :password password})
+              (reset-clipboard))
+            (recur (gen-password 75))))))))
+
+(defn delete-entry
+  []
+  (let [entries (map-indexed (fn [idx entry] (assoc entry :idx (inc idx))) @db)
+        entries-grouped (group-by :idx entries)]
+    (if (seq entries)
+      (do
+        (println "DELETE: Select one of the following entries by typing the leading line number, or just type enter to cancel.")
+        (doseq [{:keys [idx site username]} entries]
+          (println (str (format "%3d" idx) ": " site " (" username ")")))
+        (let [input (read-line)]
+          (when (not= "" input)
+            (let [selected (->> (Integer/parseInt input)
+                                (get entries-grouped)
+                                first
+                                (#(dissoc % :idx)))]
+              (delete-from-db selected)))))
+      (println "No entries found in the database!"))))
+
+(defn pass-repl
+  []
+  (let [next-command (fn []
+                       (let [choice (read-label-val "(l)ist, (a)dd, (d)elete, (q)uit")]
+                         (case choice
+                           "l" (select-entry)
+                           "a" (add-entry)
+                           "d" (delete-entry)
+                           "q" :quit)))]
+    (loop [response (next-command)]
+      (if-not (= :quit response)
+        (recur (next-command))))))
+
+(defn -main
+  []
+  (init-db (read-password-from-console "master password"))
+  (pass-repl))

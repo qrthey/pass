@@ -1,0 +1,5 @@
+* Intro
+  Implements a terminal based password manager in clojure. Underlying
+  encryption and decryption is done with javax.crypto and AES CBC
+  algorithms. The password store is saved under ~/.__passpass and can
+  be manually synced between machines with for example rsync.
