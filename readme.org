@@ -1,5 +1,34 @@
 * Intro
-  Implements a terminal based password manager in clojure. Underlying
-  encryption and decryption is done with javax.crypto and AES CBC
-  algorithms. The password store is saved under ~/.__passpass and can
-  be manually synced between machines with for example rsync.
+  Implements a terminal based password manager in clojure. The
+  underlying encryption and decryption is done with AES CBC algorithms
+  from the javax.crypto package. Each time an update is done to the
+  database of passwords, the database is encrypted with a random IV
+  and the encrypted data together with the IV is saved base64 encoded
+  in the ~/.__passpass file. This file can then be manually synced
+  between machines by using rsync for example.
+* Compilation
+  Compile a jar file with the leiningen build tool. In the pass
+  sub-directory run the following.
+  #+BEGIN_SRC shell
+    lein uberjar
+  #+END_SRC
+  This will generate some files under the target directory, one of
+  which a .jar file with 'standalone' in its name.
+* General usage
+  To easily start the password manager, create a shell script
+  accessible on your path that invokes the password manager. Example
+  script file contents:
+  #+BEGIN_SRC shell
+    #!/bin/sh
+    
+    java -jar PATH-TO-JAR-FILE/pass-0.1.0-standalone.jar
+  #+END_SRC
+  After launching the password manager, a terminal menu guides you
+  through available options. First a master password is asked for. If
+  no existing password database is found (~/.__passpass) you will be
+  asked to repeat the master password. If on the other hand a database
+  is found it is decrypted with the password. You can then add, delete
+  or select entries. You can also quit the program. Each time the
+  database is changed by adding or removing an entry, the database is
+  encrypted with the master password and written to disk as described
+  in the intro.
