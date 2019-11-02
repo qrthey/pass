@@ -4,7 +4,8 @@
            [javax.crypto.spec SecretKeySpec IvParameterSpec])
   (:require [clojure.set :as set]
             [clojure.edn :as edn]
-            [clojure.java.io :as io])
+            [clojure.java.io :as io]
+            [clojure.string :as str])
   (:gen-class))
 
 ;; encrypt / decrypt
@@ -23,35 +24,53 @@
         key-bytes (nth evolutions (* 1000 1000))]
     (SecretKeySpec. key-bytes "AES")))
 
-(def iv-par-spec
-  (IvParameterSpec.
-   (byte-array [18 170 155 90 161 13 112 4 30 110 90 36 71 76 208 232])))
+(def legacy-iv-bytes
+  (byte-array
+   [18 170 155 90 161 13 112 4 30 110 90 36 71 76 208 232]))
+
+(defn rand-iv-bytes
+  []
+  (byte-array (repeatedly 16 #(rand-int 256))))
 
 (defn encrypt-cbc
-  [text password]
+  [text-bytes password-bytes iv-bytes]
   (let [cipher (doto (Cipher/getInstance "AES/CBC/PKCS5PADDING")
-                 (.init Cipher/ENCRYPT_MODE (key-spec-aes password) iv-par-spec))
-        bytes-to-encrypt (.getBytes text "UTF-8")
-        encrypted-bytes (.doFinal cipher bytes-to-encrypt)]
-    (bytes->base64 encrypted-bytes)))
+                 (.init Cipher/ENCRYPT_MODE
+                        (key-spec-aes password-bytes)
+                        (IvParameterSpec. iv-bytes)))]
+    (.doFinal cipher text-bytes)))
 
 (defn decrypt-cbc
-  [encrypted-text password]
+  [encrypted-text-bytes password-bytes iv-bytes]
   (let [cipher (doto (Cipher/getInstance "AES/CBC/PKCS5PADDING")
-                 (.init Cipher/DECRYPT_MODE (key-spec-aes password) iv-par-spec))
-        bytes-to-decrypt (base64->bytes encrypted-text)
-        decrypted-bytes (.doFinal cipher bytes-to-decrypt)]
-    (String. decrypted-bytes "UTF-8")))
+                 (.init Cipher/DECRYPT_MODE
+                        (key-spec-aes password-bytes)
+                        (IvParameterSpec. iv-bytes)))]
+    (.doFinal cipher encrypted-text-bytes)))
 
 (defn persist-secured
-  [data path password]
-  (spit path
-        (encrypt-cbc (pr-str data) password)))
+  [data path password-bytes]
+  (let [iv-bytes (rand-iv-bytes)
+        encrypted-bytes (-> data
+                            pr-str
+                            (.getBytes "UTF-8")
+                            (encrypt-cbc password-bytes iv-bytes))]
+    (->> [encrypted-bytes iv-bytes]
+         (map bytes->base64)
+         (str/join "\n")
+         (spit path))))
 
 (defn read-secured
-  [path password]
-  (edn/read-string
-   (decrypt-cbc (slurp path) password)))
+  [path password-bytes]
+  (let [[encrypted-bytes iv-bytes] (-> (slurp path)
+                                       (str/split #"\n")
+                                       (#(map base64->bytes %)))
+        iv-bytes (or iv-bytes legacy-iv-bytes)]
+    (-> (decrypt-cbc encrypted-bytes
+                     password-bytes
+                     iv-bytes)
+        (String. "UTF-8")
+        (edn/read-string))))
 
 ;; autogenerate passwords
 (defn gen-password
