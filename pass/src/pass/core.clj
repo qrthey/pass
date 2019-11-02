@@ -30,7 +30,7 @@
 
 (defn rand-iv-bytes
   []
-  (byte-array (repeatedly 16 #(rand-int 256))))
+  (java.security.SecureRandom/getSeed 16))
 
 (defn encrypt-cbc
   [text-bytes password-bytes iv-bytes]
