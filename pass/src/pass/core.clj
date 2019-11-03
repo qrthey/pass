@@ -138,7 +138,6 @@
     (reset! db (read-secured db-path @pwd))
     (reset! db (do
                  (println "A database was not found. Please retype the password to create one.")
-                 (flush)
                  (let [pwd2 (read-password-from-console "repeat new master password")]
                    (if (= (seq password) (seq pwd2))
                      []
