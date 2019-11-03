@@ -108,6 +108,16 @@
   (apply str (System/getenv "HOME")
          [\/ \. \_ \_ \p \a \s \s \p \a \s \s]))
 
+(defn add-to-db
+  [data]
+  (swap! db conj data)
+  (persist-secured @db db-path @pwd))
+
+(defn delete-from-db
+  [data]
+  (swap! db #(filterv (fn [d] (not= d data)) %))
+  (persist-secured @db db-path @pwd))
+
 (defn- char-array->byte-array
   [chrs]
   (let [byte-buffer (.encode java.nio.charset.StandardCharsets/UTF_8 (java.nio.CharBuffer/wrap chrs))]
@@ -136,38 +146,32 @@
                          (throw (Exception. "passwords didn't match..."))))))))
   nil)
 
-(defn select-entry
+(defn select-existing-entry
   []
-  (let [entries (map-indexed (fn [idx entry] (assoc entry :idx (inc idx))) @db)
-        entries-grouped (group-by :idx entries)]
-    (if (seq entries)
+  (let [indexed-entries (map-indexed (fn [idx entry] [idx entry]) @db)]
+    (if (seq indexed-entries)
       (do
-        (println "Select one of the following entries by typing the leading line number.")
-        (doseq [{:keys [idx site username]} entries]
+        (println "Select one of the following entries by typing the leading line number. Type 'c' to cancel.")
+        (doseq [[idx {:keys [site username]}] indexed-entries]
           (println (str (format "%3d" idx) ": " site " (" username ")")))
-        (let [{:keys [site username password]} (->> (Integer/parseInt (read-line))
-                                                    (get entries-grouped)
-                                                    first)]
-          (println)
-          (println "site:" site)
-          (println "username:" username)
-          (copy-to-clipboard password)
-          (println)
-          (println (str "The password was copied to the clipboard. "
-                        "Press enter to clear the password from the clipboard."))
-          (read-line)
-          (reset-clipboard)))
+        (let [response (read-line)]
+          (when-not (= response "c")
+            (get (into {} indexed-entries)
+                 (Integer/parseInt response)))))
       (println "No entries found in the database!"))))
 
-(defn add-to-db
-  [data]
-  (swap! db conj data)
-  (persist-secured @db db-path @pwd))
-
-(defn delete-from-db
-  [data]
-  (swap! db #(filterv (fn [d] (not= d data)) %))
-  (persist-secured @db db-path @pwd))
+(defn show-entry
+  []
+  (when-let [{:keys [site username password]} (select-existing-entry)]
+    (println)
+    (println "site:" site)
+    (println "username:" username)
+    (copy-to-clipboard password)
+    (println)
+    (println (str "The password was copied to the clipboard. "
+                  "Press enter to clear the password from the clipboard."))
+    (read-line)
+    (reset-clipboard)))
 
 (defn read-label-val
   [label]
@@ -197,28 +201,15 @@
 
 (defn delete-entry
   []
-  (let [entries (map-indexed (fn [idx entry] (assoc entry :idx (inc idx))) @db)
-        entries-grouped (group-by :idx entries)]
-    (if (seq entries)
-      (do
-        (println "DELETE: Select one of the following entries by typing the leading line number, or just type enter to cancel.")
-        (doseq [{:keys [idx site username]} entries]
-          (println (str (format "%3d" idx) ": " site " (" username ")")))
-        (let [input (read-line)]
-          (when (not= "" input)
-            (let [selected (->> (Integer/parseInt input)
-                                (get entries-grouped)
-                                first
-                                (#(dissoc % :idx)))]
-              (delete-from-db selected)))))
-      (println "No entries found in the database!"))))
+  (when-let [selected (select-existing-entry)]
+    (delete-from-db selected)))
 
 (defn pass-repl
   []
   (let [next-command (fn []
                        (let [choice (read-label-val "(l)ist, (a)dd, (d)elete, (q)uit")]
                          (case choice
-                           "l" (select-entry)
+                           "l" (show-entry)
                            "a" (add-entry)
                            "d" (delete-entry)
                            "q" :quit)))]
