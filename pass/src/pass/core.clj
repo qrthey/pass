@@ -24,10 +24,6 @@
         key-bytes (nth evolutions (* 1000 1000))]
     (SecretKeySpec. key-bytes "AES")))
 
-(def legacy-iv-bytes
-  (byte-array
-   [18 170 155 90 161 13 112 4 30 110 90 36 71 76 208 232]))
-
 (defn rand-iv-bytes
   []
   (java.security.SecureRandom/getSeed 16))
@@ -64,8 +60,7 @@
   [path password-bytes]
   (let [[encrypted-bytes iv-bytes] (-> (slurp path)
                                        (str/split #"\n")
-                                       (#(map base64->bytes %)))
-        iv-bytes (or iv-bytes legacy-iv-bytes)]
+                                       (#(map base64->bytes %)))]
     (-> (decrypt-cbc encrypted-bytes
                      password-bytes
                      iv-bytes)
