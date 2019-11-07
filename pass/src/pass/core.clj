@@ -176,13 +176,14 @@
 (defn add-entry
   []
   (let [new-site (read-label-val "site")
-        new-username (read-label-val "user")]
+        new-username (read-label-val "user")
+        password-length 72]
     (if (some (fn [{:keys [site username]}]
                 (and (= site new-site)
                      (= username new-username)))
               @db)
       (println "That combination already exist, delete and recreate to change.")
-      (loop [password (gen-password 75)]
+      (loop [password (gen-password password-length)]
         (copy-to-clipboard password)
         (println (str "A new password was generated into the clipboard. "
                       "Try if the site accepts it."))
@@ -191,7 +192,7 @@
             (do
               (add-to-db {:site new-site :username new-username :password password})
               (reset-clipboard))
-            (recur (gen-password 75))))))))
+            (recur (gen-password password-length))))))))
 
 (defn delete-entry
   []
