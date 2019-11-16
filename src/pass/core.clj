@@ -103,8 +103,10 @@
 
 (defn- char-array->byte-array
   [chrs]
-  (let [byte-buffer (.encode java.nio.charset.StandardCharsets/UTF_8 (java.nio.CharBuffer/wrap chrs))]
-    (java.util.Arrays/copyOf (.array byte-buffer) (.limit byte-buffer))))
+  (let [byte-buffer (.encode java.nio.charset.StandardCharsets/UTF_8
+                             (java.nio.CharBuffer/wrap chrs))]
+    (java.util.Arrays/copyOf (.array byte-buffer)
+                             (.limit byte-buffer))))
 
 (defn- read-secret-key
   [label]
