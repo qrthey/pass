@@ -61,10 +61,9 @@
                       :uppers       "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
                       :punctuations ".!?,;-_"
                       :spaces       " "}
-        chars (->> (set/difference (set (keys char-choices))
-                                   (set (map key (filter (complement val) selected))))
-                   (select-keys char-choices)
+        chars (->> (merge char-choices selected)
                    vals
+                   (filter identity)
                    (apply concat))]
     (apply str (repeatedly length #(rand-nth chars)))))
 
