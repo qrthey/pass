@@ -92,9 +92,7 @@
 (def db (atom []))
 (def secret (atom nil))
 
-(def db-path
-  (apply str (System/getenv "HOME")
-         [\/ \. \_ \_ \p \a \s \s \p \a \s \s]))
+(def db-path (apply str (System/getenv "HOME") "/.__passpass"))
 
 (defn persist-db
   []
