@@ -17,52 +17,45 @@
   [base64]
   (.decode (Base64/getDecoder) base64))
 
-(defn key-spec-aes
-  [password]
-  (let [digester (java.security.MessageDigest/getInstance "SHA-256")
-        evolutions (iterate #(.digest digester %) password)
-        key-bytes (nth evolutions (* 1000 1000))]
-    (SecretKeySpec. key-bytes "AES")))
-
 (defn rand-iv-bytes
   []
   (java.security.SecureRandom/getSeed 16))
 
 (defn encrypt-cbc
-  [text-bytes password-bytes iv-bytes]
+  [text-bytes secret-key iv-bytes]
   (let [cipher (doto (Cipher/getInstance "AES/CBC/PKCS5PADDING")
                  (.init Cipher/ENCRYPT_MODE
-                        (key-spec-aes password-bytes)
+                        (SecretKeySpec. secret-key "AES")
                         (IvParameterSpec. iv-bytes)))]
     (.doFinal cipher text-bytes)))
 
 (defn decrypt-cbc
-  [encrypted-text-bytes password-bytes iv-bytes]
+  [encrypted-text-bytes secret-key iv-bytes]
   (let [cipher (doto (Cipher/getInstance "AES/CBC/PKCS5PADDING")
                  (.init Cipher/DECRYPT_MODE
-                        (key-spec-aes password-bytes)
+                        (SecretKeySpec. secret-key "AES")
                         (IvParameterSpec. iv-bytes)))]
     (.doFinal cipher encrypted-text-bytes)))
 
 (defn persist-secured
-  [data path password-bytes]
+  [data path secret-key]
   (let [iv-bytes (rand-iv-bytes)
         encrypted-bytes (-> data
                             pr-str
                             (.getBytes "UTF-8")
-                            (encrypt-cbc password-bytes iv-bytes))]
+                            (encrypt-cbc secret-key iv-bytes))]
     (->> [encrypted-bytes iv-bytes]
          (map bytes->base64)
          (str/join "\n")
          (spit path))))
 
 (defn read-secured
-  [path password-bytes]
+  [path secret-key]
   (let [[encrypted-bytes iv-bytes] (-> (slurp path)
                                        (str/split #"\n")
                                        (#(map base64->bytes %)))]
     (-> (decrypt-cbc encrypted-bytes
-                     password-bytes
+                     secret-key
                      iv-bytes)
         (String. "UTF-8")
         (edn/read-string))))
@@ -97,46 +90,53 @@
 
 ;; db operations and custom repl
 (def db (atom []))
-(def pwd (atom nil))
+(def secret (atom nil))
 
 (def db-path
   (apply str (System/getenv "HOME")
          [\/ \. \_ \_ \p \a \s \s \p \a \s \s]))
 
+(defn persist-db
+  []
+  (persist-secured @db db-path @secret))
+
 (defn add-to-db
   [data]
   (swap! db conj data)
-  (persist-secured @db db-path @pwd))
+  (persist-db))
 
 (defn delete-from-db
   [data]
   (swap! db #(filterv (fn [d] (not= d data)) %))
-  (persist-secured @db db-path @pwd))
+  (persist-db))
 
 (defn- char-array->byte-array
   [chrs]
   (let [byte-buffer (.encode java.nio.charset.StandardCharsets/UTF_8 (java.nio.CharBuffer/wrap chrs))]
     (java.util.Arrays/copyOf (.array byte-buffer) (.limit byte-buffer))))
 
-(defn- read-password-from-console
+(defn- read-secret-key
   [label]
   (print (str label ": "))
   (flush)
-  (if-let [console (System/console)]
-    (char-array->byte-array (.readPassword console))
-    (.getBytes (read-line))))
+  (let [password-bytes (if-let [console (System/console)]
+                         (char-array->byte-array (.readPassword console))
+                         (.getBytes (read-line)))
+        digester (java.security.MessageDigest/getInstance "SHA-256")]
+    (nth (iterate #(.digest digester %) password-bytes)
+         (* 1000 1000))))
 
 (defn init-db
-  [password]
-  (reset! pwd password)
+  [secret-key]
+  (reset! secret secret-key)
   (if (.exists (io/file db-path))
-    (reset! db (read-secured db-path @pwd))
+    (reset! db (read-secured db-path @secret))
     (reset! db (do
                  (println "A database was not found. Please retype the password to create one.")
-                 (let [pwd2 (read-password-from-console "repeat new master password")]
-                   (if (= (seq password) (seq pwd2))
+                 (let [secret-key2 (read-secret-key "repeat new master password")]
+                   (if (= (seq secret-key) (seq secret-key2))
                      []
-                     (do (reset! pwd nil)
+                     (do (reset! secret nil)
                          (throw (Exception. "passwords didn't match..."))))))))
   nil)
 
@@ -214,5 +214,5 @@
 
 (defn -main
   []
-  (init-db (read-password-from-console "master password"))
+  (init-db (read-secret-key "master password"))
   (pass-repl))
