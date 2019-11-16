@@ -9,18 +9,6 @@
   (:gen-class))
 
 ;; encrypt / decrypt
-(defn bytes->base64
-  [bs]
-  (.encodeToString (Base64/getEncoder) bs))
-
-(defn base64->bytes
-  [base64]
-  (.decode (Base64/getDecoder) base64))
-
-(defn rand-iv-bytes
-  []
-  (java.security.SecureRandom/getSeed 16))
-
 (defn encrypt-cbc
   [text-bytes secret-key iv-bytes]
   (let [cipher (doto (Cipher/getInstance "AES/CBC/PKCS5PADDING")
@@ -36,6 +24,18 @@
                         (SecretKeySpec. secret-key "AES")
                         (IvParameterSpec. iv-bytes)))]
     (.doFinal cipher encrypted-text-bytes)))
+
+(defn bytes->base64
+  [bs]
+  (.encodeToString (Base64/getEncoder) bs))
+
+(defn base64->bytes
+  [base64]
+  (.decode (Base64/getDecoder) base64))
+
+(defn rand-iv-bytes
+  []
+  (java.security.SecureRandom/getSeed 16))
 
 (defn persist-secured
   [data path secret-key]
