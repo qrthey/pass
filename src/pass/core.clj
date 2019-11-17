@@ -81,7 +81,7 @@
   (copy-to-clipboard ""))
 
 ;; db operations and custom repl
-(def db (atom []))
+(def db (atom nil))
 (def secret (atom nil))
 
 (def db-path (apply str (System/getenv "HOME") "/.__passpass"))
