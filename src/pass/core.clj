@@ -2,8 +2,7 @@
   (:import [java.util Base64]
            [javax.crypto Cipher]
            [javax.crypto.spec SecretKeySpec IvParameterSpec])
-  (:require [clojure.set :as set]
-            [clojure.edn :as edn]
+  (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str])
   (:gen-class))
