@@ -118,6 +118,10 @@
     (nth (iterate #(.digest digester %) password-bytes)
          (* 1000 1000))))
 
+(defn secrets=
+  [secret1 secret2]
+  (= (seq secret1) (seq secret2)))
+
 (defn init-db
   [secret-key]
   (reset! secret secret-key)
@@ -126,7 +130,7 @@
     (reset! db (do
                  (println "A database was not found. Please retype the password to create one.")
                  (let [secret-key2 (read-secret-key "repeat new master password")]
-                   (if (= (seq secret-key) (seq secret-key2))
+                   (if (secrets= secret-key secret-key2)
                      []
                      (do (reset! secret nil)
                          (throw (Exception. "passwords didn't match..."))))))))
