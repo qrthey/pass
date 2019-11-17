@@ -134,15 +134,21 @@
         (persist-db)))
   nil)
 
+(defn read-label-val
+  [label]
+  (print (str label ": "))
+  (flush)
+  (read-line))
+
 (defn select-existing-entry
   []
   (let [indexed-entries (map-indexed (fn [idx entry] [idx entry]) @db)]
     (if (seq indexed-entries)
       (do
-        (println "Select one of the following entries by typing the leading line number. Type 'c' to cancel.")
+        (println "Available entries:\n")
         (doseq [[idx {:keys [site username]}] indexed-entries]
           (println (str (format "%3d" idx) ": " site " (" username ")")))
-        (let [response (read-line)]
+        (let [response (read-label-val "\nnumber selection or (c)ancel")]
           (when-not (= response "c")
             (get (into {} indexed-entries)
                  (Integer/parseInt response)))))
@@ -160,12 +166,6 @@
                   "Press enter to clear the password from the clipboard."))
     (read-line)
     (reset-clipboard)))
-
-(defn read-label-val
-  [label]
-  (print (str label ": "))
-  (flush)
-  (read-line))
 
 (defn add-entry
   []
