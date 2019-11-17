@@ -127,13 +127,11 @@
   (reset! secret secret-key)
   (if (.exists (io/file db-path))
     (reset! db (read-secured db-path @secret))
-    (reset! db (do
-                 (println "A database was not found. Please retype the password to create one.")
-                 (let [secret-key2 (read-secret-key "repeat new master password")]
-                   (if (secrets= secret-key secret-key2)
+    (do (reset! db (if (secrets= secret-key
+                                 (read-secret-key "No existing database found, repeat the master password to create one"))
                      []
-                     (do (reset! secret nil)
-                         (throw (Exception. "passwords didn't match..."))))))))
+                     (throw (Exception. "passwords didn't match..."))))
+        (persist-db)))
   nil)
 
 (defn select-existing-entry
