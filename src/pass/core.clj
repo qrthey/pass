@@ -195,14 +195,28 @@
   (when-let [selected (select-existing-entry)]
     (delete-from-db selected)))
 
+(defn change-master-password
+  []
+  (if (secrets= @secret (read-secret-key "current password"))
+      (do
+        (let [new-secret (read-secret-key "new password")]
+          (if (secrets= new-secret (read-secret-key "repeat new password"))
+            (do
+              (reset! secret new-secret)
+              (persist-db)
+              (println "Master password successfully changed."))
+            (println "New passwords didn't match!"))))
+      (println "Incorrect current password!")))
+
 (defn pass-repl
   []
   (let [next-command (fn []
-                       (let [choice (read-label-val "(l)ist, (a)dd, (d)elete, (q)uit")]
+                       (let [choice (read-label-val "(l)ist, (a)dd, (d)elete, (c)hange master password, (q)uit")]
                          (case choice
                            "l" (show-entry)
                            "a" (add-entry)
                            "d" (delete-entry)
+                           "c" (change-master-password)
                            "q" :quit)))]
     (loop [response (next-command)]
       (if-not (= :quit response)
