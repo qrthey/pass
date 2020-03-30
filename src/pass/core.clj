@@ -83,11 +83,11 @@
 (def db (atom nil))
 (def secret (atom nil))
 
-(def db-path (apply str (System/getenv "HOME") "/.__passpass"))
+(def db-path (atom nil))
 
 (defn persist-db
   []
-  (persist-secured @db db-path @secret))
+  (persist-secured @db @db-path @secret))
 
 (defn add-to-db
   [data]
@@ -124,8 +124,8 @@
 (defn init-db
   [secret-key]
   (reset! secret secret-key)
-  (if (.exists (io/file db-path))
-    (reset! db (read-secured db-path @secret))
+  (if (.exists (io/file @db-path))
+    (reset! db (read-secured @db-path @secret))
     (do (reset! db (if (secrets= secret-key
                                  (read-secret-key "No existing database found, repeat the master password to create one"))
                      []
@@ -220,6 +220,10 @@
         (recur (next-command))))))
 
 (defn -main
-  []
+  [& args]
+  (reset! db-path
+          (if (= 1 (count args))
+            (first args)
+            (apply str (System/getenv "HOME") "/.__passpass")))
   (init-db (read-secret-key "master password"))
   (pass-repl))
