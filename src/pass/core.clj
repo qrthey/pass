@@ -82,8 +82,8 @@
 ;; db operations and custom repl
 (def db (atom nil))
 (def secret (atom nil))
-
 (def db-path (atom nil))
+(def password-length 72)
 
 (defn persist-db
   []
@@ -98,6 +98,26 @@
   [data]
   (swap! db #(filterv (fn [d] (not= d data)) %))
   (persist-db))
+
+(defn entry=
+  [entry1 entry2]
+  (and (= (:site entry1)
+          (:site entry2))
+       (= (:username entry1)
+          (:username entry2))))
+
+(defn update-db
+  [data]
+  (if (not-any? #(entry= data %)
+                @db)
+    (println "Given data does not match existing entries.")
+    (do
+      (swap! db (fn [db]
+                  (for [entry db]
+                    (if (entry= entry data)
+                      data
+                      entry))))
+      (persist-db))))
 
 (defn- char-array->byte-array
   [chrs]
@@ -169,8 +189,7 @@
 (defn add-entry
   []
   (let [new-site (read-label-val "site")
-        new-username (read-label-val "user")
-        password-length 72]
+        new-username (read-label-val "user")]
     (if (some (fn [{:keys [site username]}]
                 (and (= site new-site)
                      (= username new-username)))
@@ -192,27 +211,49 @@
   (when-let [selected (select-existing-entry)]
     (delete-from-db selected)))
 
+(defn change-password
+  []
+  (when-let [{:keys [site username password] :as entry} (select-existing-entry)]
+    (println)
+    (println "site:" site)
+    (println "username:" username)
+    (copy-to-clipboard password)
+    (println)
+    (println (str "The previous password was copied to the clipboard. Press enter to generate a new one."))
+    (read-line)
+    (loop [password (gen-password password-length)]
+      (copy-to-clipboard password)
+      (println (str "A new password was generated into the clipboard. "
+                    "Try if the site accepts it."))
+      (let [choice (read-label-val "pwd ok? (y/n/q)")]
+        (case choice
+          "y" (update-db (assoc entry :password password))
+          "n" (recur (gen-password password-length))
+          "q" (println "Aborted"))))
+    (reset-clipboard)))
+
 (defn change-master-password
   []
   (if (secrets= @secret (read-secret-key "current password"))
-      (do
-        (let [new-secret (read-secret-key "new password")]
-          (if (secrets= new-secret (read-secret-key "repeat new password"))
-            (do
-              (reset! secret new-secret)
-              (persist-db)
-              (println "Master password successfully changed."))
-            (println "New passwords didn't match!"))))
-      (println "Incorrect current password!")))
+    (do
+      (let [new-secret (read-secret-key "new password")]
+        (if (secrets= new-secret (read-secret-key "repeat new password"))
+          (do
+            (reset! secret new-secret)
+            (persist-db)
+            (println "Master password successfully changed."))
+          (println "New passwords didn't match!"))))
+    (println "Incorrect current password!")))
 
 (defn pass-repl
   []
   (let [next-command (fn []
-                       (let [choice (read-label-val "(l)ist, (a)dd, (d)elete, (c)hange master password, (q)uit")]
+                       (let [choice (read-label-val "(l)ist, (a)dd, (d)elete, (u)pdate, (c)hange master password, (q)uit")]
                          (case choice
                            "l" (show-entry)
                            "a" (add-entry)
                            "d" (delete-entry)
+                           "u" (change-password)
                            "c" (change-master-password)
                            "q" :quit)))]
     (loop [response (next-command)]
