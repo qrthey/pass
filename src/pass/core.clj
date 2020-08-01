@@ -112,11 +112,11 @@
                 @db)
     (println "Given data does not match existing entries.")
     (do
-      (swap! db (fn [db]
-                  (for [entry db]
-                    (if (entry= entry data)
-                      data
-                      entry))))
+      (swap! db  (fn [db]
+                   (mapv #(if (entry= % data)
+                            data
+                            %)
+                         db)))
       (persist-db))))
 
 (defn- char-array->byte-array
