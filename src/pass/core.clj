@@ -255,7 +255,9 @@
                            "d" (delete-entry)
                            "u" (change-password)
                            "c" (change-master-password)
-                           "q" :quit)))]
+                           "q" :quit
+                           (do (println "Unrecognized choice.")
+                               (recur)))))]
     (loop [response (next-command)]
       (if-not (= :quit response)
         (recur (next-command))))))
